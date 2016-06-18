@@ -3,7 +3,6 @@
             [prone.middleware :refer [wrap-exceptions]]
             [buddy.auth.backends :as backends]
             [buddy.auth.middleware :refer [wrap-authentication wrap-authorization]]
-            [ring.middleware.keyword-params :refer [wrap-keyword-params]]
             [ring.middleware.json :refer [wrap-json-response]]
             [ring.middleware.transit :refer [wrap-transit-params]]
             [ring.middleware.reload :refer [wrap-reload]]
@@ -22,7 +21,7 @@
 (defn auth-user
   "attaches a user object to a req"
   [request token]
-  (let [user (db/find-one-by "players" :access-token token)]
+  (let [user (db/get-player-by-auth-token token)]
     (merge user {:_id (str (:_id user))})))
 
 (def backend (backends/token {:authfn auth-user}))

@@ -1,7 +1,23 @@
 (ns battlebots.services.mongodb
   (:require [monger.core :as mg]
-            [monger.collection :as mc])
+            [monger.collection :as mc]
+            [monger.query :refer :all]
+            [monger.operators :refer :all])
   (:import org.bson.types.ObjectId))
+
+(def is-production? (= (System/getenv "CLJ_ENV") "production"))
+(def db-username (System/getenv "WT_BATTLEBOTS_MONGOD_USER_NAME"))
+(def db-password (System/getenv "WT_BATTLEBOTS_MONGOD_USER_PW"))
+(def db-host (System/getenv "WT_BATTLEBOTS_MONGOD_HOST_LIST"))
+
+;; Throw Exception if running in Prod with no database environment variables
+(if is-production?
+  (if (not (and db-username db-password db-host))
+    (throw (Exception. "Missing Database Environment Variable"))))
+
+(def connection-uri (if is-production?
+                      (str "mongodb://" db-username ":" db-password "@" db-host "/battlebots")
+                      "mongodb://127.0.0.1/battlebots"))
 
 (defn setup-db
   "Ensures collection indexes exist"
@@ -13,8 +29,6 @@
                                  :github-id 1
                                  :access-token 1) {:unique true})))
 
-(def connection-uri "mongodb://127.0.0.1/battlebots")
-
 (def conn
   (let [conn (atom (mg/connect-via-uri connection-uri))
         db (:db @conn)]
@@ -23,45 +37,95 @@
 
 (defn get-db [] (:db @conn))
 
-(defn find-one
-  "searches for a single record, if it finds one it returns it as a map, otherwise nil"
-  [collection-name _id]
-  (mc/find-one-as-map (get-db) collection-name {:_id (ObjectId. _id)}))
+(def games-coll "games")
+(def rounds-coll "rounds")
+(def game-fields [:initial-arena
+                  :players
+                  :state])
 
-(defn find-one-by
-  "finds a record by looking it up in a given collection by a given parameter"
-  [collection-name param value]
-  (mc/find-one-as-map (get-db) collection-name {param value}))
+;; GAME OPERATIONS
+(defn get-all-games
+  []
+  (with-collection (get-db) games-coll
+    (find {})
+    (fields game-fields)))
 
-(defn find-all
-  "returns all records of a given collection"
-  [collection-name]
-  (mc/find-maps (get-db) collection-name))
+(defn get-game
+  [game-id]
+  (first (with-collection (get-db) games-coll
+             (find {:_id (ObjectId. game-id)})
+             (fields game-fields)
+             (limit 1))))
 
-(defn update-one-by-id
-  "udpates a single record"
-  [collection-name _id document]
-  (mc/update-by-id (get-db) collection-name (ObjectId. _id) document))
+(defn add-game
+  [game]
+  (mc/insert-and-return (get-db) games-coll game))
 
-(defn update-one-by
-  "supdates a record by a given query"
-  [query collection-name document options]
-  (mc/update (get-db) collection-name query document options))
+(defn update-game
+  [game-id update]
+  (mc/update-by-id (get-db) games-coll (ObjectId. game-id) update))
 
-(defn save
-  "saves a document (will create a new one"
-  [collection-name document]
-  (mc/save-and-return (get-db) collection-name document))
+(defn add-player-to-game
+  [game-id player]
+  (mc/update (get-db) games-coll {:_id (ObjectId. game-id)} {$push {:players player}}))
 
-(defn insert-one
-  "inserts a single record into a given collection"
-  [collection-name record]
-  (let [_id (ObjectId.)
-        insert-record (assoc record :_id _id)]
-    (mc/insert (get-db) collection-name insert-record)
-    insert-record))
+(defn remove-game
+  [game-id]
+  (mc/remove (get-db) rounds-coll {:game-id (ObjectId. game-id)})
+  (mc/remove-by-id (get-db) games-coll (ObjectId. game-id)))
 
-(defn remove-one
-  "removes a single record by given id"
-  [collection-name _id]
-  (mc/remove-by-id (get-db) collection-name (ObjectId. _id)))
+(defn save-game-segment
+  [game-segment]
+  (mc/insert (get-db) rounds-coll game-segment))
+
+(defn get-game-segment-count
+  [game-id]
+  (mc/count (get-db) rounds-coll {:game-id (ObjectId. game-id)}))
+
+(defn get-game-segment
+  [game-id segment-number]
+  (mc/find-one-as-map (get-db) rounds-coll {:game-id (ObjectId. game-id)
+                                            :segment segment-number}))
+;; PLAYER OPERATIONS
+
+(def player-coll "players")
+(def player-fields [:admin
+                    :avatar_url
+                    :email
+                    :login
+                    :github-id
+                    :name])
+
+(defn get-all-players
+  []
+  (with-collection (get-db) player-coll
+    (find {})
+    (fields player-fields)))
+
+(defn get-player
+  [player-id]
+  (first (with-collection (get-db) player-coll
+           (find {:_id (ObjectId. player-id)})
+           (limit 1)
+           (fields player-fields))))
+
+(defn add-or-update-player
+  [player]
+  (mc/save-and-return (get-db) player-coll player))
+
+(defn get-player-by-github-id
+  [github-id]
+  (first (with-collection (get-db) player-coll
+           (find {:github-id github-id})
+           (limit 1)
+           (fields player-fields))))
+
+(defn get-player-by-auth-token
+  "NOTE: get-player-by-auth-token is used by the middleware layer and exposes
+  the entire player map"
+  [access-token]
+  (mc/find-one-as-map (get-db) player-coll {:access-token access-token}))
+
+(defn remove-player
+  [player-id]
+  (mc/remove-by-id (get-db) player-coll (ObjectId. player-id)))

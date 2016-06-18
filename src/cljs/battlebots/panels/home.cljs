@@ -11,18 +11,21 @@
     (fn []
       [:li
        [:button {:on-click #(re-frame/dispatch [:set-active-game game])} game-id]
-       (if (and (not is-registered?) (= (:state game) "pending"))
-         [:button {:on-click #(re-frame/dispatch [:register-user-in-game game-id user-id])} "Join Game"])])))
+       (cond
+        (and (not is-registered?) (= (:state game) "pending"))
+        [:button {:on-click #(re-frame/dispatch [:register-user-in-game game-id user-id])} "Join Game"]
+        (= (:state game) "finalized")
+        [:button {:on-click #(re-frame/dispatch [:play-game game-id])} "Play Game"])])))
 
 (defn authed-homepage
-  [user games active-game]
+  [user games]
   [:div
    [:h3 (str "Welcome back " (:login user) "!")]
    [:p "Game ids"]
    [:ul.game-list
     (doall (for [game games]
              ^{:key (str (:_id game) "-" (count (:players game)))} [battlebot-game game user]))]
-   (render-arena active-game)])
+   (render-arena)])
 
 (def unauthed-homepage
   [:div
@@ -32,11 +35,10 @@
 
 (defn home-panel []
   (re-frame/dispatch [:fetch-games])
-  (let [active-game (re-frame/subscribe [:active-game])
-        games (re-frame/subscribe [:games])
+  (let [games (re-frame/subscribe [:games])
         user (re-frame/subscribe [:user])]
     (fn []
       [:div.panel-home
        (if @user
-         (authed-homepage @user @games @active-game)
+         (authed-homepage @user @games)
          unauthed-homepage)])))
