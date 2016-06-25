@@ -10,6 +10,10 @@
 
                  ;; Tests
                  [speclj "3.3.2"]
+                 [base64-clj "0.1.1"]
+
+                 ;; Codec implementations
+                 [org.clojure/data.codec "0.1.0"]
 
                  ;;
                  ;; API Libs
@@ -108,7 +112,7 @@
 
   :test-paths ["spec"]
 
-  :minify-assets {:assets {"resources/public/css/site.min.css" "resources/public/css/site.css"}}
+  :minify-assets {:assets {"resources/public/css/main.min.css" "resources/public/css/main.css"}}
 
   :cljsbuild {:builds {:app {:source-paths ["src/cljs" "src/cljc"]
                              :compiler {:output-to "target/cljsbuild/public/js/app.js"
